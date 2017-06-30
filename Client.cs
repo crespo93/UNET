@@ -1,12 +1,13 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using System.Text;
 using UnityEngine.Networking;
 using UnityEngine.UI;
 using System.Runtime.Serialization;
 using System.IO;
 
-public class Client : MonoBehaviour
+public class newClient : MonoBehaviour
 {
     private const int MAX_CONNECTION = 100;
 
@@ -27,18 +28,11 @@ public class Client : MonoBehaviour
 
     private string playerName;
 
-    public void connect()
+    private GameObject move;
+    private GameObject Joint;
+
+    private void Start()
     {
-        // player name
-        /*string pName = GameObject.Find("nameInput").GetComponent<InputField>().text;
-        if(pName == "")
-        {
-            Debug.Log("You must enter a name!");
-            return;
-        }
-
-        playerName = pName;*/
-
         NetworkTransport.Init();
         ConnectionConfig cc = new ConnectionConfig();
 
@@ -48,7 +42,11 @@ public class Client : MonoBehaviour
         HostTopology topo = new HostTopology(cc, MAX_CONNECTION);
         NetworkServer.Reset();
         hostId = NetworkTransport.AddHost(topo, port, null);
-        connectionId = NetworkTransport.Connect(hostId, "10.123.210.90", 8888, 0, out error);
+    }
+
+    public void connect()
+    {
+        connectionId = NetworkTransport.Connect(hostId, "10.123.210.221", 8888, 0, out error);
         Debug.Log("connected");
 
         connectionTime = Time.time;
@@ -57,36 +55,61 @@ public class Client : MonoBehaviour
 
     private void Update()
     {
-        if (!isConnected)
-            return;
 
         int recHostId;
-        int channelId;
+        int recConnectionId;
+        int recChannelId;
         byte[] recBuffer = new byte[1024];
         int bufferSize = 1024;
         int dataSize;
         byte error;
-        NetworkEventType recData = NetworkTransport.Receive(out recHostId, out connectionId, out channelId, recBuffer, bufferSize, out dataSize, out error);
+        NetworkEventType recData = NetworkTransport.Receive(out recHostId, out recConnectionId, out recChannelId, recBuffer, bufferSize, out dataSize, out error);
         switch (recData)
         {
             case NetworkEventType.Nothing:         //1
                 break;
             case NetworkEventType.ConnectEvent:    //2
+                Debug.Log("player " + recConnectionId + "has connected");
                 break;
             case NetworkEventType.DataEvent:       //3
+                string msg = UTF8Encoding.UTF8.GetString(recBuffer);
+                Stream stream = new MemoryStream(recBuffer);
+                char[] delimiterChars = { ':' };
+                string[] temp = msg.Split(delimiterChars);
+                string[] joint = { temp[0], temp[1], temp[2], temp[3], temp[4], temp[5] };
+                char[] Chars = { '|' };
+                foreach (string t in joint)
+                {
+                    string[] pos = t.Split(Chars);
+                    move = GameObject.Find(pos[0]);
+                    move.transform.position = getVector3(pos[1]);
+                    move.transform.eulerAngles = getVector3(pos[2]);
+                }
                 break;
             case NetworkEventType.DisconnectEvent: //4
+                Debug.Log("player " + recConnectionId + "has disconnected");
                 break;
         }
     }
+
+
 
     public void SendSocketMessage()
     {
         byte error;
         byte[] buffer = new byte[1024];
-        Vector3 position = new Vector3(1, 2, 3);
-        SerializableVector3 pos = new SerializableVector3(position.x, position.y, position.z);
-        string msg = pos.ToString();
+        string[] joints = { "C3_ARM1", "C3_ARM2", "C3_ARM3", "C3_ARM4", "C3_ARM5", "C3_ARM6" };
+        string msg = null;
+        foreach (string j in joints)
+        {
+            Joint = GameObject.Find(j);
+            Vector3 Position = Joint.transform.position;
+            Vector3 Rotation = Joint.transform.eulerAngles;
+            string name = j;
+            SerializableVector3 pos = new SerializableVector3(Position.x, Position.y, Position.z);
+            SerializableVector3 rot = new SerializableVector3(Rotation.x, Rotation.y, Rotation.z);
+            msg += name + "|" + pos.ToString() + "|" + rot.ToString() + ":";
+        }
         Stream stream = new MemoryStream(buffer);
         DataContractSerializer formatter = new DataContractSerializer(msg.GetType());
         formatter.WriteObject(stream, msg);
@@ -155,4 +178,15 @@ public class Client : MonoBehaviour
             return new SerializableVector3(rValue.x, rValue.y, rValue.z);
         }
     }
+
+    public Vector3 getVector3(string rString)
+    {
+        string[] temp = rString.Substring(1, rString.Length - 2).Split(',');
+        float x = float.Parse(temp[0]);
+        float y = float.Parse(temp[1]);
+        float z = float.Parse(temp[2]);
+        Vector3 rValue = new Vector3(x, y, z);
+        return rValue;
+    }
 }
+
